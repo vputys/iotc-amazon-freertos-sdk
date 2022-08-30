@@ -119,7 +119,7 @@ int iotc_device_client_send_message(const char* message) {
 
     bool connected = xMqttContext.connectStatus == MQTTConnected;
     if (pdPASS != ret) {
-        LogError(("Failed to send message. Connection status: %s", message, connected ? "CONNECTED" : "DISCONNECTED"));
+        LogError(("Failed to send message %s. Connection status: %s", message, connected ? "CONNECTED" : "DISCONNECTED"));
     }
     return (ret == pdPASS ? EXIT_SUCCESS : EXIT_FAILURE);
 }
