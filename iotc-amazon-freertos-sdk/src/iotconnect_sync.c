@@ -160,11 +160,13 @@ static IotclSyncResponse* run_http_sync(const char* cpid, const char* uniqueid) 
     if (!ret) {
         dump_response("Sync: Unable to parse HTTP response,", &req);
     }
-    last_sync_result = ret->ds;
-    if (!ret || ret->ds != IOTCL_SR_OK) {
-        report_sync_error(ret, req.response);
-        iotcl_discovery_free_sync_response(ret);
-        ret = NULL;
+    else {
+        last_sync_result = ret->ds;
+        if (ret->ds != IOTCL_SR_OK) {
+            report_sync_error(ret, req.response);
+            iotcl_discovery_free_sync_response(ret);
+            ret = NULL;
+        }
     }
 
     return ret;
