@@ -159,8 +159,7 @@ static IotclSyncResponse* run_http_sync(const char* cpid, const char* uniqueid) 
     IotclSyncResponse* ret = iotcl_discovery_parse_sync_response(json_start);
     if (!ret) {
         dump_response("Sync: Unable to parse HTTP response,", &req);
-    }
-    else {
+    } else {
         last_sync_result = ret->ds;
         if (ret->ds != IOTCL_SR_OK) {
             report_sync_error(ret, req.response);
