@@ -56,6 +56,7 @@ static IotclConfig lib_config = { 0 };
 static IotConnectClientConfig config = { 0 };
 
 
+#if 0 // UNUSED?
 static void report_sync_error(IotclSyncResponse* response, const char* sync_response_str) {
     if (NULL == response) {
         fprintf(stderr, "Failed to obtain sync response?\n");
@@ -96,7 +97,7 @@ static void report_sync_error(IotclSyncResponse* response, const char* sync_resp
     }
     fprintf(stderr, "Raw server response was:\n--------------\n%s\n--------------\n", sync_response_str);
 }
-
+#endif
 
 static void on_mqtt_c2d_message(unsigned char* message, size_t message_len) {
     char* str = malloc(message_len + 1);

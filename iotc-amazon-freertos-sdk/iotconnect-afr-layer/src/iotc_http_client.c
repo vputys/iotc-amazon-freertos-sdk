@@ -163,7 +163,7 @@ static BaseType_t prvBackoffForRetry(BackoffAlgorithmContext_t* pxRetryParams)
 
             xReturnStatus = pdPASS;
 
-            LogInfo(("Retry attempt %lu out of maximum retry attempts %lu.",
+            LogInfo(("Retry attempt %u out of maximum retry attempts %u.",
                 (pxRetryParams->attemptsDone + 1),
                 pxRetryParams->maxRetryAttempts));
         }
