@@ -16,6 +16,7 @@ const char* iotc_sync_get_client_id(void);
 const char* iotc_sync_get_pub_topic(void);
 const char* iotc_sync_get_sub_topic(void);
 const char* iotc_sync_get_dtg(void);
+const char* iotc_sync_get_pass(void);
 
 int iotc_sync_obtain_response(void);
 void iotc_sync_free_response(void);

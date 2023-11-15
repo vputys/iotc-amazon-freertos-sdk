@@ -2,9 +2,9 @@
 #ifndef __IOTCONNECT_CONFIG__H__
 #define __IOTCONNECT_CONFIG__H__
 
-#define IOTCONNECT_CPID "your-cpid"
-#define IOTCONNECT_ENV  "your-environment"
-#define IOTCONNECT_DUID "your-device-id"
+#define IOTCONNECT_CPID "avtds"
+#define IOTCONNECT_ENV  "avnetpoc"
+#define IOTCONNECT_DUID "justatoken"
 
 
 /**************************************************/

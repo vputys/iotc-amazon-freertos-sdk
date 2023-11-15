@@ -14,80 +14,101 @@
 #include "iotconnect_discovery.h"
 #include "iotconnect_certs.h"
 #include "iotc_http_request.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+
 #include "iotconnect_sync.h"
 
 #define RESOURCE_PATH_DSICOVERY "/api/sdk/cpid/%s/lang/M_C/ver/2.0/env/%s"
 #define RESOURCE_PATH_SYNC "%ssync"
+
+#define DUMP(...) SEGGER_RTT_printf(0, __VA_ARGS__); SEGGER_RTT_printf(0, "\r\n")
+
+#define IOTC_SYNCLogError(x) DUMP x
+#define IOTC_SYNCLogWarn(x) DUMP x
+#define IOTC_SYNCLogInfo(x) DUMP x
+#define IOTC_SYNCLogDebug(x) DUMP x
 
 static IotclDiscoveryResponse* discovery_response = NULL;
 static IotclSyncResponse* sync_response = NULL;
 static IotclSyncResult last_sync_result = IOTCL_SR_UNKNOWN_DEVICE_STATUS;
 
 
+
 static void dump_response(const char* message, IotConnectHttpRequest* response) {
-    printf("%s", message);
+    IOTC_SYNCLogInfo(("%s", message));
     if (response->response) {
-        printf(" Response was:\r\n----\r\n%s\r\n----\r\n", response->response);
+        IOTC_SYNCLogInfo((" Response was:\r\n----\r\n%s\r\n----\r\n", response->response));
     }
     else {
-        printf(" Response was empty\r\n");
+        IOTC_SYNCLogInfo((" Response was empty\r\n"));
     }
 }
 
 static void report_sync_error(IotclSyncResponse* response, const char* sync_response_str) {
     if (NULL == response) {
-        printf("Failed to obtain sync response?\r\n");
+        IOTC_SYNCLogInfo(("Failed to obtain sync response?\r\n"));
         return;
     }
     switch (response->ds) {
     case IOTCL_SR_DEVICE_NOT_REGISTERED:
-        printf("IOTC_SyncResponse error: Not registered\r\n");
+        IOTC_SYNCLogInfo(("IOTC_SyncResponse error: Not registered\r\n"));
         break;
     case IOTCL_SR_AUTO_REGISTER:
-        printf("IOTC_SyncResponse error: Auto Register\r\n");
+        IOTC_SYNCLogInfo(("IOTC_SyncResponse error: Auto Register\r\n"));
         break;
     case IOTCL_SR_DEVICE_NOT_FOUND:
-        printf("IOTC_SyncResponse error: Device not found\r\n");
+        IOTC_SYNCLogInfo(("IOTC_SyncResponse error: Device not found\r\n"));
         break;
     case IOTCL_SR_DEVICE_INACTIVE:
-        printf("IOTC_SyncResponse error: Device inactive\r\n");
+        IOTC_SYNCLogInfo(("IOTC_SyncResponse error: Device inactive\r\n"));
         break;
     case IOTCL_SR_DEVICE_MOVED:
-        printf("IOTC_SyncResponse error: Device moved\r\n");
+        IOTC_SYNCLogInfo(("IOTC_SyncResponse error: Device moved\r\n"));
         break;
     case IOTCL_SR_CPID_NOT_FOUND:
-        printf("IOTC_SyncResponse error: CPID not found\r\n");
+        IOTC_SYNCLogInfo(("IOTC_SyncResponse error: CPID not found\r\n"));
         break;
     case IOTCL_SR_UNKNOWN_DEVICE_STATUS:
-        printf("IOTC_SyncResponse error: Unknown device status error from server\r\n");
+        IOTC_SYNCLogInfo(("IOTC_SyncResponse error: Unknown device status error from server\r\n"));
         break;
     case IOTCL_SR_ALLOCATION_ERROR:
-        printf("IOTC_SyncResponse internal error: Allocation Error\r\n");
+        IOTC_SYNCLogInfo(("IOTC_SyncResponse internal error: Allocation Error\r\n"));
         break;
     case IOTCL_SR_PARSING_ERROR:
-        printf("IOTC_SyncResponse internal error: Parsing error. Please check parameters passed to the request.\r\n");
+        IOTC_SYNCLogInfo(("IOTC_SyncResponse internal error: Parsing error. Please check parameters passed to the request.\r\n"));
         break;
     default:
-        printf("WARN: report_sync_error called, but no error returned?\r\n");
+        IOTC_SYNCLogInfo(("WARN: report_sync_error called, but no error returned?\r\n"));
         break;
     }
-    printf("Raw server response was:\r\n--------------\r\n%s\r\n--------------\r\n", sync_response_str);
+    IOTC_SYNCLogInfo(("Raw server response was:\r\n--------------\r\n%s\r\n--------------\r\n", sync_response_str));
 }
+#define testing_resource "/api/sdk/cpid/avtds/lang/M_C/ver/2.0/env/avnetpoc"
 
 static IotclDiscoveryResponse* run_http_discovery(const char* cpid, const char* env) {
-    IotConnectHttpRequest req = { 0 };
+   
 
     char resource_str_buff[sizeof(RESOURCE_PATH_DSICOVERY) + CONFIG_IOTCONNECT_CPID_MAX_LEN + CONFIG_IOTCONNECT_ENV_MAX_LEN + 10 /* slack */];
+    
+    size_t test = sizeof(RESOURCE_PATH_DSICOVERY);
+
+    IOTC_SYNCLogError(( "current task size left: %d", uxTaskGetStackHighWaterMark(NULL) )); 
+
     sprintf(resource_str_buff, RESOURCE_PATH_DSICOVERY, cpid, env);
 
+    IotConnectHttpRequest req = { 0 };
+
     req.host_name = IOTCONNECT_DISCOVERY_HOSTNAME;
-    req.resource = resource_str_buff;
+    //req.resource = resource_str_buff;
+    req.resource = testing_resource;
     req.tls_cert = CERT_GODADDY_INT_SECURE_G2;
 
     int status = iotconnect_https_request(&req);
 
     if (status != EXIT_SUCCESS) {
-        printf("Discovery: iotconnect_https_request() error code: %x data: %s\r\n", status, req.response);
+        IOTC_SYNCLogInfo(("Discovery: iotconnect_https_request() error code: %x data: %s\r\n", status, req.response));
         return NULL;
     }
     if (NULL == req.response || 0 == strlen(req.response)) {
@@ -119,7 +140,7 @@ static IotclSyncResponse* run_http_sync(const char* cpid, const char* uniqueid) 
     char* sync_path = malloc(strlen(discovery_response->path) + strlen("sync?") + 1);
     
     if (!sync_path) {
-        printf("Failed to allocate sync_path\r\n");
+        IOTC_SYNCLogInfo(("Failed to allocate sync_path\r\n"));
         return NULL;
     }
     sprintf(sync_path, RESOURCE_PATH_SYNC, discovery_response->path);
@@ -139,7 +160,7 @@ static IotclSyncResponse* run_http_sync(const char* cpid, const char* uniqueid) 
     free(sync_path);
 
     if (status != EXIT_SUCCESS) {
-        printf("Sync: iotconnect_https_request() error code: %x data: %s\r\n", status, req.response);
+        IOTC_SYNCLogInfo(("Sync: iotconnect_https_request() error code: %x data: %s\r\n", status, req.response));
         return NULL;
     }
 
@@ -210,6 +231,12 @@ const char* iotc_sync_get_dtg(void) {
     return sync_response->dtg;
 }
 
+const char* iotc_sync_get_pass(void) {
+    if (!sync_response) iotc_sync_obtain_response();
+    if (!sync_response) return NULL;
+    return sync_response->broker.pass;
+}
+
 
 int iotc_sync_obtain_response(void) {
     iotcl_discovery_free_discovery_response(discovery_response);
@@ -222,16 +249,16 @@ int iotc_sync_obtain_response(void) {
         // get_base_url will print the error
         return -1;
     }
-    printf("Discovery response parsing successful.\r\n");
+    IOTC_SYNCLogInfo(("Discovery response parsing successful.\r\n"));
 
     sync_response = run_http_sync(IOTCONNECT_CPID, IOTCONNECT_DUID);
     if (NULL == sync_response) {
         // Sync_call will print the error
         return -2;
     }
-    printf("Sync response parsing successful.\r\n");
+    IOTC_SYNCLogInfo(("Sync response parsing successful.\r\n"));
 
-    run_http_sync(IOTCONNECT_CPID, IOTCONNECT_DUID);
+    //run_http_sync(IOTCONNECT_CPID, IOTCONNECT_DUID);
     return (sync_response ? EXIT_SUCCESS : EXIT_FAILURE);
 }
  

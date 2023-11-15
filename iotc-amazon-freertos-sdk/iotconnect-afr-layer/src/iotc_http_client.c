@@ -43,21 +43,31 @@
 #include "app_config.h"
 
 /* Include common demo header. */
-#include "aws_demo.h"
+//#include "aws_demo.h"
 
 /* Kernel includes. */
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "transport_secure_sockets.h"
+#include "core_mqtt.h"
+#include "tls_socket.h"
 #include "backoff_algorithm.h"
 #include "core_http_client.h"
 #include "iotconnect_certs.h"
-#include "pkcs11_helpers.h"
+//#include "pkcs11_helpers.h"
+#include "using_mbedtls_pkcs11.h"
+#include "mqtt_demo_config.h"
+//#include "transport_interface.h"
 
 #include "iotc_http_request.h"
 
 /*------------- Demo configurations -------------------------*/
+#define DUMP(...) SEGGER_RTT_printf(0, __VA_ARGS__); SEGGER_RTT_printf(0, "\r\n")
+
+#define IOTC_HTTPLogError(x) DUMP x
+#define IOTC_HTTPLogWarn(x) DUMP x
+#define IOTC_HTTPLogInfo(x) DUMP x
+#define IOTC_HTTPLogDebug(x) DUMP x
 
 
 /* Check that a transport timeout for the transport send and receive functions
@@ -93,10 +103,17 @@
 *
 * @note Transport stacks are defined in amazon-freertos/libraries/abstractions/transport/secure_sockets/transport_secure_sockets.h.
 */
+typedef struct SecureSocketsTransportParams {
+    TlsTransportParams_t *pParams
+} SecureSocketsTransportParams_t;
+
+
 struct NetworkContext
 {
-    SecureSocketsTransportParams_t* pParams;
+    TlsTransportParams_t *pParams;
+    //SecureSocketsTransportParams_t* pParams;
 };
+
 
 /*-----------------------------------------------------------*/
 
@@ -126,6 +143,8 @@ static HTTPRequestInfo_t requestInfo;
  */
 static HTTPResponse_t response;
 
+NetworkCredentials_t xNetworkCredentials;
+
 typedef BaseType_t(*TransportConnect_t)(NetworkContext_t* pxNetworkContext, IotConnectHttpRequest* request);
 
 static BaseType_t prvBackoffForRetry(BackoffAlgorithmContext_t* pxRetryParams)
@@ -145,9 +164,8 @@ static BaseType_t prvBackoffForRetry(BackoffAlgorithmContext_t* pxRetryParams)
      * is mitigated.
      */
     uint32_t ulRandomNum = 0;
-    
-    if (xPkcs11GenerateRandomNumber((uint8_t*)&ulRandomNum,
-        sizeof(ulRandomNum)) == pdPASS)
+    //xPkcs11GenerateRandomNumber
+    if (uxRand() == pdPASS)
     {
         /* Get back-off value (in milliseconds) for the next retry attempt. */
         xBackoffAlgStatus = BackoffAlgorithm_GetNextBackoff(pxRetryParams, ulRandomNum, &usNextRetryBackOff);
@@ -200,6 +218,8 @@ static BaseType_t connectToServerWithBackoffRetriesV2(TransportConnect_t connect
      * exhausted.*/
     do
     {
+    	// TODO: fails at this onnectFunction() return addr seems to be
+    	//return pdPASS;
         xReturn = connectFunction(pxNetworkContext, r);
 
         if (xReturn != pdPASS)
@@ -221,31 +241,43 @@ static BaseType_t connectToServerWithBackoffRetriesV2(TransportConnect_t connect
 /*-----------------------------------------------------------*/
 static BaseType_t prvConnectToServer(NetworkContext_t* pxNetworkContext, IotConnectHttpRequest* r)
 {
-    ServerInfo_t serverInfo = { 0 };
-    SocketsConfig_t socketsConfig = { 0 };
+    //ServerInfo_t serverInfo = { 0 };
+    //SocketsConfig_t xNetworkCredentials = { 0 };
     BaseType_t status = pdPASS;
-    TransportSocketStatus_t networkStatus;
+    TlsTransportStatus_t networkStatus;
 
-    serverInfo.pHostName = r->host_name;
-    serverInfo.hostNameLength = strlen(r->host_name);
-    serverInfo.port = 443;
+    
+    xNetworkCredentials.pAlpnProtos = NULL;
+    xNetworkCredentials.disableSni = false;
 
-    socketsConfig.enableTls = true;
-    socketsConfig.pAlpnProtos = NULL;
-    socketsConfig.maxFragmentLength = 0;
-    socketsConfig.disableSni = false;
-    socketsConfig.pRootCa = r->tls_cert;
-    socketsConfig.rootCaSize = strlen(r->tls_cert) + 1;
-    socketsConfig.sendTimeoutMs = IOTC_HTTP_CLIENT_SEND_RECV_TIMEOUT_MS;
-    socketsConfig.recvTimeoutMs = IOTC_HTTP_CLIENT_SEND_RECV_TIMEOUT_MS;
+    //serverInfo.pHostName = r->host_name;
+    //serverInfo.hostNameLength = strlen(r->host_name);
+    //serverInfo.port = 443;
+
+    //xNetworkCredentials.enableTls = true;
+    xNetworkCredentials.pAlpnProtos = NULL;
+    //xNetworkCredentials.maxFragmentLength = 0;
+    xNetworkCredentials.disableSni = false;
+    xNetworkCredentials.pRootCa = r->tls_cert;
+    xNetworkCredentials.rootCaSize = strlen(r->tls_cert) + 1;
+   
+
+#if 1
+    xNetworkCredentials.pUserName = democonfigMQTT_USERNAME;
+    xNetworkCredentials.userNameSize = sizeof(democonfigMQTT_USERNAME);
+    xNetworkCredentials.pPassword = democonfigMQTT_PASSWORD;
+    xNetworkCredentials.passwordSize = sizeof(democonfigMQTT_PASSWORD);
+#endif
+    xNetworkCredentials.pClientCertLabel = "Device Cert";   /**< @brief String representing the PKCS #11 label for the client certificate. */
+    xNetworkCredentials.pPrivateKeyLabel = "Device Priv TLS Key";   /**< @brief String representing the PKCS #11 label for the private key. */
 
     LogInfo(("Establishing a TLS session with %s.", r->host_name));
 
-    networkStatus = SecureSocketsTransport_Connect(pxNetworkContext,
-        &serverInfo,
-        &socketsConfig);
+    //char buff_v[50] = "discovery.iotconnect.io";
 
-    if (networkStatus != TRANSPORT_SOCKET_STATUS_SUCCESS) {
+    networkStatus = TLS_Socket_Connect(pxNetworkContext, r->host_name, 443, &xNetworkCredentials, IOTC_HTTP_CLIENT_SEND_RECV_TIMEOUT_MS, IOTC_HTTP_CLIENT_SEND_RECV_TIMEOUT_MS);
+
+    if (networkStatus != TLS_TRANSPORT_SUCCESS) {
         status = pdFAIL;
     }
     return status;
@@ -316,48 +348,89 @@ static BaseType_t prvClientRequest(const TransportInterface_t* ptransportInterfa
     if (status != pdPASS) {
         LogError(("Received an invalid response from the server Result: %u.", response.statusCode));
     }
-
-    return((status == pdPASS) && (httpStatus == HTTPSuccess));
+    BaseType_t ret = pdFAIL;
+    ret = ((status == pdPASS) && (httpStatus == HTTPSuccess));
+    return ret;
 }
+
+//NetworkContext_t v_networkContext = {1};
 
 int iotconnect_https_request(IotConnectHttpRequest* request)
 {
     TransportInterface_t transportInterface;
-    NetworkContext_t networkContext = { 0 };
-    TransportSocketStatus_t networkStatus;
+    
+    TlsTransportStatus_t networkStatus;
 
-    SecureSocketsTransportParams_t secureSocketsTransportParams = { 0 };
+    //SecureSocketsTransportParams_t v_secureSocketsTransportParams = { 0 };
+    
     BaseType_t status = pdPASS;
 
-    networkContext.pParams = &secureSocketsTransportParams;
+    NetworkContext_t v_networkContext = {0};
+
+    v_networkContext.pParams = (TlsTransportParams_t*)calloc(1, sizeof(TlsTransportParams_t));
+
+    if (!v_networkContext.pParams){
+        IOTC_HTTPLogError(("Failed to calloc"));
+        return EXIT_FAILURE;
+    }
+
+    //SecureSocketsTransportParams_t v_secureSocketsTransportParams;
+    //memset(0, &v_networkContext, sizeof(NetworkContext_t));
+    //memset(0, &v_secureSocketsTransportParams, sizeof(SecureSocketsTransportParams_t));
+    //v_networkContext.pParams = &v_secureSocketsTransportParams;
+    
     request->response = NULL;
 
+    //HTTPLogInfo( ( "---------Waiting for connection---------\r\n" ) );
+
+    /* Wait for Networking */
+    if( FreeRTOS_IsNetworkUp() == pdFALSE )
+    {
+        //HTTPLogInfo( ( "Waiting for the network link up event..." ) );
+
+        while( FreeRTOS_IsNetworkUp() == pdFALSE )
+        {
+            vTaskDelay( pdMS_TO_TICKS( 1000U ) );
+        }
+    }
+
     BaseType_t tries = 0;
+    vTaskDelay( pdMS_TO_TICKS( 1000U ) );
+    LogWarn(("Got connect"));
+
     do {
 
+        IOTC_HTTPLogError(("host: {%s}", request->host_name));
         // keep trying and break if tries is exceeded
-        status = connectToServerWithBackoffRetriesV2(prvConnectToServer, &networkContext, request);
+        IOTC_HTTPLogError(( "Max task size before connect: %d", uxTaskGetStackHighWaterMark(NULL) )); 
 
+        status = connectToServerWithBackoffRetriesV2(prvConnectToServer, &v_networkContext, request);
+        //return 0;
+        IOTC_HTTPLogError(("host: {%s}", request->host_name));
+        IOTC_HTTPLogError(( "Max task size after connect: %d", uxTaskGetStackHighWaterMark(NULL) ));
         if (status == pdFAIL) {
             LogError(("Failed to connect to HTTP server %s. Tries so far %d...", request->host_name, tries));
         }
 
         if (status == pdPASS) {
-            transportInterface.pNetworkContext = &networkContext;
-            transportInterface.send = SecureSocketsTransport_Send;
-            transportInterface.recv = SecureSocketsTransport_Recv;
+            transportInterface.pNetworkContext = &v_networkContext;
+            transportInterface.send = TLS_Socket_send;
+            transportInterface.recv = TLS_Socket_recv;
+            //return 0;
 
             status = prvClientRequest(&transportInterface, request);
-
+            IOTC_HTTPLogError(( "Discovery url: {%s}", request->response ));
+            IOTC_HTTPLogError(( "Max task size after getting discovery back: %d", uxTaskGetStackHighWaterMark(NULL) ));
             // cleanup/disconnect
-            networkStatus = SecureSocketsTransport_Disconnect(&networkContext);
-
-            if (networkStatus != TRANSPORT_SOCKET_STATUS_SUCCESS) {
-                status = pdFAIL;
-                LogError(("SecureSocketsTransport_Disconnect() failed to close the network connection. Result: %d.", 
-                    (int)networkStatus)
-                );
+            //networkStatus
+            //return 0;
+            TLS_Socket_Disconnect(&v_networkContext);
+            IOTC_HTTPLogError(( "Max task size past TLS Discon: %d", uxTaskGetStackHighWaterMark(NULL) ));
+            #if 0
+            if (1 == 1) {
+                return 0;
             }
+            #endif
             break;
         }
 
@@ -377,6 +450,10 @@ int iotconnect_https_request(IotConnectHttpRequest* request)
     } while (status != pdPASS);
 
     if (status == pdPASS) {
+        if (v_networkContext.pParams){
+            free(v_networkContext.pParams);
+            v_networkContext.pParams = NULL;
+        }
         return EXIT_SUCCESS;
     }
     return EXIT_FAILURE;

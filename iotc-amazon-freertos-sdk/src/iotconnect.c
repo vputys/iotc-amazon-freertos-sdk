@@ -29,17 +29,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "aws_demo.h"
+//#include "aws_demo.h"
 
 /* Kernel includes. */
 #include "FreeRTOS.h"
 #include "task.h"
 
 /* shadow demo helpers header. */
-#include "mqtt_demo_helpers.h"
+//#include "mqtt_demo_helpers.h"
 
 /* Transport interface implementation include header for TLS. */
-#include "transport_secure_sockets.h"
+#include "tls_socket.h"
 
 #include "transport_interface.h"
 
@@ -51,6 +51,13 @@
 #include "iotc_device_client.h"
 #include "iotconnect_sync.h"
 #include "iotconnect.h"
+
+#define DUMP(...) SEGGER_RTT_printf(0, __VA_ARGS__); SEGGER_RTT_printf(0, "\r\n")
+
+#define IOTCLogError(x) DUMP x
+#define IOTCLogWarn(x) DUMP x
+#define IOTCLogInfo(x) DUMP x
+#define IOTCLogDebug(x) DUMP x
 
 static IotclConfig lib_config = { 0 };
 static IotConnectClientConfig config = { 0 };
@@ -103,17 +110,17 @@ static void on_mqtt_c2d_message(unsigned char* message, size_t message_len) {
     char* str = malloc(message_len + 1);
     memcpy(str, message, message_len);
     str[message_len] = 0;
-    printf("event>>> %s\n", str);
+    IOTCLogInfo(("event>>> %s\n", str));
     if (!iotcl_process_event(str)) {
-        fprintf(stderr, "Error encountered while processing %s\n", str);
+        IOTCLogError(("Error encountered while processing %s\n", str));
     }
     free(str);
 }
 
 void iotconnect_sdk_disconnect() {
-    printf("Disconnecting...\n");
+    IOTCLogInfo(("Disconnecting...\n"));
     if (0 == iotc_device_client_disconnect()) {
-        printf("Disconnected.\n");
+        IOTCLogInfo(("Disconnected.\n"));
     }
 }
 
@@ -171,7 +178,7 @@ int iotconnect_sdk_init() {
     lib_config.device.duid = config.duid;
 
     if (!config.env || !config.cpid || !config.duid) {
-        printf("Error: Device configuration is invalid. Configuration values for env, cpid and duid are required.\n");
+        IOTCLogError(("Error: Device configuration is invalid. Configuration values for env, cpid and duid are required.\n"));
         return -1;
     }
 
@@ -184,11 +191,11 @@ int iotconnect_sdk_init() {
     char cpid_buff[5];
     strncpy(cpid_buff, config.cpid, 4);
     cpid_buff[4] = 0;
-    printf("CPID: %s***\n", cpid_buff);
-    printf("ENV:  %s\n", config.env);
+    IOTCLogInfo(("CPID: %s***\n", cpid_buff));
+    IOTCLogInfo(("ENV:  %s\n", config.env));
 
     if (!iotcl_init(&lib_config)) {
-        fprintf(stderr, "Error: Failed to initialize the IoTConnect Lib\n");
+        IOTCLogError(("Error: Failed to initialize the IoTConnect Lib\n"));
         return -1;
     }
 
@@ -199,7 +206,7 @@ int iotconnect_sdk_init() {
 
     ret = iotc_device_client_init(&pc);
     if (ret) {
-        fprintf(stderr, "Failed to connect!\n");
+        IOTCLogError(("Failed to connect!\n"));
         return ret;
     }
 
